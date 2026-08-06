@@ -1,0 +1,34 @@
+{
+  "name": "busyfit-bot",
+  "version": "1.0.0",
+  "description": "Fitness & Nutrition Coach Telegram bot",
+  "main": "dist/index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "migrate": "node-pg-migrate up --migration-file-language sql --migrations-dir src/db/migrations --envPath .env"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
+    "dotenv": "^17.4.2",
+    "grammy": "^1.45.1",
+    "node-cron": "^4.6.0",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/node-cron": "^3.0.11",
+    "@types/pg": "^8.20.0",
+    "node-pg-migrate": "^9.0.0",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
+  }
+}
