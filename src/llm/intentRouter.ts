@@ -1,6 +1,12 @@
 import { anthropic, MODEL_ROUTER } from "./client.js";
 
-export type Intent = "log_meal" | "log_workout" | "plan_request" | "question";
+export type Intent =
+  | "log_meal"
+  | "log_workout"
+  | "plan_request"
+  | "workout_today"
+  | "split_adjustment"
+  | "question";
 
 const CLASSIFY_TOOL = {
   name: "classify_intent",
@@ -10,10 +16,21 @@ const CLASSIFY_TOOL = {
     properties: {
       intent: {
         type: "string" as const,
-        enum: ["log_meal", "log_workout", "plan_request", "question"],
+        enum: [
+          "log_meal",
+          "log_workout",
+          "plan_request",
+          "workout_today",
+          "split_adjustment",
+          "question",
+        ],
         description:
           "log_meal: describes food they ate. log_workout: describes exercise they did. " +
-          "plan_request: asks for a meal plan, recipe, or workout split/program. " +
+          "plan_request: asks for a meal plan, recipe, or brand-new workout split/program. " +
+          "workout_today: asks what today's/next workout is, e.g. 'what's my workout today', " +
+          "'what am I doing at the gym', including mentions of being short on time. " +
+          "split_adjustment: asks to change/swap/modify their existing workout split, e.g. " +
+          "'swap Tuesday for cardio', 'I want a cardio-only week', 'can we change my split'. " +
           "question: any other open-ended coaching question or general conversation.",
       },
     },

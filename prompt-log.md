@@ -71,3 +71,24 @@ from real usage rather than a fresh spec:
   proactive messaging (check-in nag escalation, daily workout push, habit
   nudges) — were scoped into the PRD/TRD/implementation plan as new phases
   (7 and 8) and reviewed before any code was written for them.
+
+## Phase 4 — Workout split generation + dynamic adjustment
+
+Prompted with "give me a super concise summary of work so far and lets
+start building phase 4." Claude read `docs/06-implementation-plan.md`
+(Phase 4 scope) and `docs/03-app-flow.md` flows 4-5, then extended the
+existing split-generation pattern rather than introducing a new one:
+
+- Two new intent-router categories (`workout_today`, `split_adjustment`)
+  alongside the existing log/plan/question set.
+- "What's today's workout" resolves the day-of-week in the user's stored
+  timezone against the active split, shows last-logged performance per
+  exercise, and calls a small forced-tool-use call to shorten the session
+  when the user mentions a time limit.
+- Split adjustment reuses the forced-tool-use pattern from initial split
+  generation — Claude evaluates a change request against the current split
+  and recent logs, and the result is saved as a new `workout_splits`
+  version (history retained, not overwritten), matching the versioning
+  already defined in the schema.
+- `/logworkout` now looks up the previous log for the same exercise and
+  notes weight/rep progress or regression in its reply.

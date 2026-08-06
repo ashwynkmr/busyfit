@@ -27,7 +27,7 @@ workout programming, Apple Watch sync, and open-ended coaching Q&A.
 
 ## Current status
 
-**Phases 1-3 are complete** (with Phase 3 substantially reworked after initial build — see below).
+**Phases 1-4 are complete** (with Phase 3 substantially reworked after initial build — see below).
 Node.js + TypeScript, ESM.
 
 - `grammy` for the Telegram bot, `pg` for Postgres, `node-pg-migrate` for migrations,
@@ -48,6 +48,10 @@ Node.js + TypeScript, ESM.
   generated plan) and the shared `completeCheckin` used by both the manual flow and photo
   check-ins
 - `src/flows/` — generic multi-step conversation state machine shared by onboarding/check-in
+- `src/workout/` — active-split lookup + versioning (`getActiveSplit.ts`), today's-workout
+  resolution with timezone-aware day lookup and time-boxed shortening (`todaysWorkout.ts`,
+  `src/llm/shortenSession.ts`), split adjustment against current split + recent logs
+  (`splitAdjustment.ts`, `src/llm/adjustWorkoutSplit.ts`), log history queries (`recentLogs.ts`)
 - `src/scheduler/` — per-user Saturday check-in cron, keyed to `users.timezone`
 - `src/index.ts` — entrypoint: verifies DB connection, schedules cron jobs, starts polling
 - npm scripts: `npm run dev` (tsx watch), `npm run build`, `npm run start`, `npm run migrate`
@@ -61,7 +65,7 @@ Gotchas hit along the way (already fixed, but worth knowing):
 - Telegram messages need `parse_mode` set explicitly and should be split into one message per
   logical unit (e.g. one per recipe) rather than concatenated — matches `04-ui-ux-brief.md`
 
-Not yet built: dynamic workout split adjustment (Phase 4), Apple Watch webhook (Phase 5),
-weekly adherence summary (Phase 6), read-only dashboard (Phase 7), proactive
-messaging/persona rework — escalating Saturday nag, daily workout push, habit nudges
-(Phase 8). See `docs/06-implementation-plan.md` for the full phase breakdown.
+Not yet built: Apple Watch webhook (Phase 5), weekly adherence summary (Phase 6), read-only
+dashboard (Phase 7), proactive messaging/persona rework — escalating Saturday nag, daily
+workout push, habit nudges (Phase 8). See `docs/06-implementation-plan.md` for the full phase
+breakdown.

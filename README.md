@@ -65,13 +65,21 @@ ever-growing context/cost.
   generated once at onboarding, explicitly not framed as a precise prescription.
 - **Open-ended coaching Q&A** — grounded in live metrics/targets/split, not generic advice.
 - **Saturday check-in scheduling** — per-user cron job keyed to their stored timezone.
+- **"What's today's workout"** — resolves the day-of-week in the user's timezone against the
+  active split, shows last-logged performance per exercise, and auto-shortens the session
+  when the user mentions a time limit.
+- **Dynamic split adjustment** — Claude evaluates a change request against the current split
+  and recent logged performance, then generates and saves a new split version — history is
+  retained in `workout_splits`, never overwritten.
+- **Progressive overload note** — `/logworkout` compares each new log to the last entry for
+  that exercise and calls out weight/rep progress or regression.
 
 ## Planned
 
-Dynamic workout split adjustment, Apple Watch data sync, weekly adherence summaries, a
-read-only trends dashboard, and a proactive-messaging layer (escalating check-in reminders,
-daily workout push, habit nudges) with a more personal, humor-forward persona. Full
-phase-by-phase breakdown in [`docs/06-implementation-plan.md`](./docs/06-implementation-plan.md).
+Apple Watch data sync, weekly adherence summaries, a read-only trends dashboard, and a
+proactive-messaging layer (escalating check-in reminders, daily workout push, habit nudges)
+with a more personal, humor-forward persona. Full phase-by-phase breakdown in
+[`docs/06-implementation-plan.md`](./docs/06-implementation-plan.md).
 
 ## Stack
 
@@ -93,6 +101,7 @@ src/
   onboarding/     Step sequence, unit parsing, deficit calculator
   checkin/        Weekly check-in flow + shared check-in completion logic
   flows/          Generic multi-step conversation state machine (used by onboarding + check-in)
+  workout/        Active-split lookup, today's-workout resolution, split adjustment, log history
   scheduler/      Cron scheduling
   db/             Pool + migrations
 docs/             Planning docs: PRD, TRD, app flows, UI/UX brief, schema, implementation plan
@@ -124,6 +133,17 @@ npm run dev             # tsx watch — polls Telegram, hot-reloads on save
 ```
 
 Other scripts: `npm run build` (typecheck + compile), `npm run start` (run compiled output).
+
+## Security & privacy
+
+- No secrets in this repo. `.env` is gitignored and was never committed; `.env.example` only
+  lists the variable names the bot expects (`TELEGRAM_BOT_TOKEN`, `DATABASE_URL`,
+  `ANTHROPIC_API_KEY`) — no real values, no history to scrub.
+- `src/config.ts` fails fast at startup if any required env var is missing, rather than
+  running with a silently-undefined credential.
+- This is a single-user MVP: all user data (metrics, targets, logs, conversation history)
+  lives in your own Postgres instance, not a shared or hosted one — nothing here talks to a
+  third-party datastore.
 
 ## Notes on how this was built
 

@@ -13,6 +13,8 @@ import { completeCheckin } from "../checkin/completeCheckin.js";
 import { downloadTelegramFile } from "./downloadTelegramFile.js";
 import { parseScalePhoto } from "../llm/parseScalePhoto.js";
 import { clearFlow } from "../flows/stepFlow.js";
+import { describeTodaysWorkout } from "../workout/todaysWorkout.js";
+import { handleSplitAdjustmentRequest } from "../workout/splitAdjustment.js";
 
 export const bot = new Bot(config.telegramBotToken);
 
@@ -23,7 +25,7 @@ bot.command("start", async (ctx) => {
       "You can log things manually:\n" +
       "/logmeal <description> | <calories> | <protein> <carbs> <fat>\n" +
       "/logworkout <exercise> | <sets>x<reps>@<weight>\n\n" +
-      "Or just ask me anything.",
+      "Or just ask what your workout is today, ask to adjust your split, or ask me anything.",
   );
 
   if (!(await hasCompletedOnboarding(userId))) {
@@ -77,6 +79,16 @@ bot.on("message:text", async (ctx) => {
       case "plan_request":
         await ctx.reply("Meal and workout plan generation is coming soon — not available yet.");
         break;
+      case "workout_today": {
+        const summary = await describeTodaysWorkout(userId, text);
+        await replyLong(ctx, summary);
+        break;
+      }
+      case "split_adjustment": {
+        const summary = await handleSplitAdjustmentRequest(userId, text);
+        await replyLong(ctx, summary);
+        break;
+      }
     }
   } catch (err) {
     console.error("message:text handler failed:", err);
