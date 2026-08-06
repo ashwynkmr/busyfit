@@ -20,20 +20,24 @@ everything else — targets math, scheduling, state transitions — stays determ
 ## How it works
 
 ```
-Telegram (grammy)
-      │
-      ▼
-Intent router (Claude, cheap/fast model)
-      │
+Telegram (grammy)                   Health Auto Export (iOS)
+      │                                    │
+      ▼                                    ▼
+Intent router (Claude,              Fastify webhook
+cheap/fast model)                   (shared-secret auth)
+      │                                    │
       ├─ multi-step flow in progress? → onboarding / weekly check-in state machine
       ├─ log request → structured chat commands (/logmeal, /logworkout)
       ├─ plan request → stub (meal/workout plans are check-in-driven, not on-demand)
+      ├─ workout_today / split_adjustment → today's-workout lookup / split versioning
       └─ open question → coach: system prompt + live DB state + bounded conversation
                           history → Claude (Sonnet-tier)
-
+                                                                        │
+                                                                        ▼
 Postgres (source of truth)
   users → metrics → targets → meal_plans
         → workout_splits → workout_logs
+        → watch_metrics (populated independently, from the webhook)
         → conversation_messages
 ```
 
@@ -73,12 +77,16 @@ ever-growing context/cost.
   retained in `workout_splits`, never overwritten.
 - **Progressive overload note** — `/logworkout` compares each new log to the last entry for
   that exercise and calls out weight/rep progress or regression.
+- **Apple Watch sync** — a [Health Auto Export](https://www.healthyapps.dev/) automation on
+  the phone posts steps/heart-rate/workout data to a webhook; the coach references the
+  latest readings (steps in the last 24h, latest heart rate, latest logged workout) directly
+  in open-ended coaching answers, alongside metrics/targets/split.
 
 ## Planned
 
-Apple Watch data sync, weekly adherence summaries, a read-only trends dashboard, and a
-proactive-messaging layer (escalating check-in reminders, daily workout push, habit nudges)
-with a more personal, humor-forward persona. Full phase-by-phase breakdown in
+Weekly adherence summaries, a read-only trends dashboard, and a proactive-messaging layer
+(escalating check-in reminders, daily workout push, habit nudges) with a more personal,
+humor-forward persona. Full phase-by-phase breakdown in
 [`docs/06-implementation-plan.md`](./docs/06-implementation-plan.md).
 
 ## Stack
@@ -86,7 +94,8 @@ with a more personal, humor-forward persona. Full phase-by-phase breakdown in
 Node.js + TypeScript (ESM) · [grammy](https://grammy.dev) (Telegram) · PostgreSQL +
 [node-pg-migrate](https://github.com/salsita/node-pg-migrate) · Claude API
 ([@anthropic-ai/sdk](https://github.com/anthropics/anthropic-sdk-typescript)) ·
-[node-cron](https://github.com/node-cron/node-cron)
+[node-cron](https://github.com/node-cron/node-cron) ·
+[Fastify](https://fastify.dev) (Apple Watch webhook)
 
 Sonnet-tier model for generation/coaching, a cheaper/faster tier for intent routing — see
 `docs/02-trd.md` for the full cost model and rationale.
@@ -102,6 +111,8 @@ src/
   checkin/        Weekly check-in flow + shared check-in completion logic
   flows/          Generic multi-step conversation state machine (used by onboarding + check-in)
   workout/        Active-split lookup, today's-workout resolution, split adjustment, log history
+  watch/          Health Auto Export payload parsing + storage into watch_metrics
+  http/           Fastify server (Apple Watch webhook, health check)
   scheduler/      Cron scheduling
   db/             Pool + migrations
 docs/             Planning docs: PRD, TRD, app flows, UI/UX brief, schema, implementation plan
@@ -127,10 +138,15 @@ Requires Node 18+, a Postgres instance, a Telegram bot token
 
 ```bash
 npm install
-cp .env.example .env   # fill in TELEGRAM_BOT_TOKEN, DATABASE_URL, ANTHROPIC_API_KEY
+cp .env.example .env   # fill in TELEGRAM_BOT_TOKEN, DATABASE_URL, ANTHROPIC_API_KEY, HEALTH_WEBHOOK_SECRET
 npm run migrate        # applies all migrations in src/db/migrations
-npm run dev             # tsx watch — polls Telegram, hot-reloads on save
+npm run dev             # tsx watch — polls Telegram, hot-reloads on save, starts the webhook server
 ```
+
+This also starts a small Fastify server (`PORT`, default `3000`) for the Apple Watch webhook —
+point a [Health Auto Export](https://www.healthyapps.dev/) automation at
+`POST /webhook/health-auto-export?secret=<HEALTH_WEBHOOK_SECRET>` (a tunnel like `ngrok` if
+testing from a phone against localhost). `GET /health` is an unauthenticated liveness check.
 
 Other scripts: `npm run build` (typecheck + compile), `npm run start` (run compiled output).
 
@@ -138,7 +154,10 @@ Other scripts: `npm run build` (typecheck + compile), `npm run start` (run compi
 
 - No secrets in this repo. `.env` is gitignored and was never committed; `.env.example` only
   lists the variable names the bot expects (`TELEGRAM_BOT_TOKEN`, `DATABASE_URL`,
-  `ANTHROPIC_API_KEY`) — no real values, no history to scrub.
+  `ANTHROPIC_API_KEY`, `HEALTH_WEBHOOK_SECRET`) — no real values, no history to scrub.
+- The Apple Watch webhook is shared-secret authenticated (`?secret=...`, matched against
+  `HEALTH_WEBHOOK_SECRET`) — required since Health Auto Export's export target doesn't support
+  custom auth headers. Requests without a matching secret get a `401` before any parsing.
 - `src/config.ts` fails fast at startup if any required env var is missing, rather than
   running with a silently-undefined credential.
 - This is a single-user MVP: all user data (metrics, targets, logs, conversation history)

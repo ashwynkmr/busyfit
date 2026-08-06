@@ -24,8 +24,14 @@ interface SupplementRow {
   supplement_guidance: string | null;
 }
 
+interface WatchMetricRow {
+  metric_type: string;
+  value: unknown;
+  recorded_at: Date;
+}
+
 export async function buildUserContext(userId: string): Promise<string> {
-  const [metrics, targets, split, supplements] = await Promise.all([
+  const [metrics, targets, split, supplements, watchMetrics, stepsToday] = await Promise.all([
     pool.query<MetricsRow>(
       "SELECT weight, body_fat_pct, recorded_at FROM metrics WHERE user_id = $1 ORDER BY recorded_at DESC LIMIT 1",
       [userId],
@@ -39,6 +45,16 @@ export async function buildUserContext(userId: string): Promise<string> {
       [userId],
     ),
     pool.query<SupplementRow>("SELECT supplement_guidance FROM users WHERE id = $1", [userId]),
+    pool.query<WatchMetricRow>(
+      "SELECT DISTINCT ON (metric_type) metric_type, value, recorded_at FROM watch_metrics " +
+        "WHERE user_id = $1 ORDER BY metric_type, recorded_at DESC",
+      [userId],
+    ),
+    pool.query<{ total: string | null }>(
+      "SELECT SUM((value->>'qty')::numeric) AS total FROM watch_metrics " +
+        "WHERE user_id = $1 AND metric_type = 'steps' AND recorded_at > now() - interval '24 hours'",
+      [userId],
+    ),
   ]);
 
   const lines: string[] = [];
@@ -76,6 +92,25 @@ export async function buildUserContext(userId: string): Promise<string> {
   const supplementGuidance = supplements.rows[0]?.supplement_guidance;
   if (supplementGuidance) {
     lines.push(`General supplement guidance given at onboarding: ${supplementGuidance}`);
+  }
+
+  const stepsTotal = stepsToday.rows[0]?.total;
+  if (stepsTotal) {
+    lines.push(`Steps in the last 24h (Apple Watch): ${Math.round(Number(stepsTotal))}`);
+  }
+
+  const latestHeartRate = watchMetrics.rows.find((row) => row.metric_type === "heart_rate");
+  if (latestHeartRate) {
+    lines.push(
+      `Latest heart rate reading (Apple Watch, ${latestHeartRate.recorded_at.toDateString()}): ${JSON.stringify(latestHeartRate.value)}`,
+    );
+  }
+
+  const latestWorkout = watchMetrics.rows.find((row) => row.metric_type === "workout");
+  if (latestWorkout) {
+    lines.push(
+      `Latest Apple Watch-logged workout (${latestWorkout.recorded_at.toDateString()}): ${JSON.stringify(latestWorkout.value)}`,
+    );
   }
 
   return lines.join("\n");

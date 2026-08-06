@@ -19,6 +19,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
     "dotenv": "^17.4.2",
+    "fastify": "^5.11.2",
     "grammy": "^1.45.1",
     "node-cron": "^4.6.0",
     "pg": "^8.22.0"

@@ -27,13 +27,13 @@ workout programming, Apple Watch sync, and open-ended coaching Q&A.
 
 ## Current status
 
-**Phases 1-4 are complete** (with Phase 3 substantially reworked after initial build — see below).
+**Phases 1-5 are complete** (with Phase 3 substantially reworked after initial build — see below).
 Node.js + TypeScript, ESM.
 
 - `grammy` for the Telegram bot, `pg` for Postgres, `node-pg-migrate` for migrations,
-  `@anthropic-ai/sdk` for Claude, `node-cron` for scheduling
-- `src/config.ts` — env loading (`TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, `ANTHROPIC_API_KEY`),
-  fails fast if missing
+  `@anthropic-ai/sdk` for Claude, `node-cron` for scheduling, `fastify` for the webhook server
+- `src/config.ts` — env loading (`TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, `ANTHROPIC_API_KEY`,
+  `HEALTH_WEBHOOK_SECRET`, `PORT`), fails fast if a required var is missing
 - `src/db/pool.ts` — shared `pg` Pool
 - `src/db/migrations/` — one file per table from `05-backend-schema.md` plus incremental
   `users` columns added as Phase 3 evolved (flow state, profile fields, grocery/supplement
@@ -52,8 +52,18 @@ Node.js + TypeScript, ESM.
   resolution with timezone-aware day lookup and time-boxed shortening (`todaysWorkout.ts`,
   `src/llm/shortenSession.ts`), split adjustment against current split + recent logs
   (`splitAdjustment.ts`, `src/llm/adjustWorkoutSplit.ts`), log history queries (`recentLogs.ts`)
+- `src/watch/` — Health Auto Export payload parsing (`parseHealthAutoExport.ts`, handles the
+  non-ISO `"YYYY-MM-DD HH:MM:SS ±ZZZZ"` date format Health Auto Export sends) and storage into
+  `watch_metrics` (`storeWatchMetrics.ts`); single-user MVP so the webhook attributes all data
+  to the sole onboarded user rather than needing per-request identity
+- `src/http/` — Fastify server (`server.ts`): `POST /webhook/health-auto-export` (shared-secret
+  query-param auth, since Health Auto Export's export target has no custom-header support),
+  `GET /health` liveness check
+- `src/llm/buildContext.ts` — now also surfaces last-24h step total, latest heart rate, and
+  latest logged workout from `watch_metrics` into the coaching context
 - `src/scheduler/` — per-user Saturday check-in cron, keyed to `users.timezone`
-- `src/index.ts` — entrypoint: verifies DB connection, schedules cron jobs, starts polling
+- `src/index.ts` — entrypoint: verifies DB connection, schedules cron jobs, starts the Fastify
+  server, starts polling
 - npm scripts: `npm run dev` (tsx watch), `npm run build`, `npm run start`, `npm run migrate`
 
 Gotchas hit along the way (already fixed, but worth knowing):
@@ -64,8 +74,11 @@ Gotchas hit along the way (already fixed, but worth knowing):
   always validate required arrays are non-empty before writing to the DB
 - Telegram messages need `parse_mode` set explicitly and should be split into one message per
   logical unit (e.g. one per recipe) rather than concatenated — matches `04-ui-ux-brief.md`
+- Health Auto Export's exported dates aren't valid ISO 8601 (`"2026-08-06 08:00:00 -0700"` —
+  space separator, no colon in the offset) and fail silent `Invalid Date` parsing if you just
+  swap the space for `T`; reformat with a regex before calling `new Date(...)`, and always
+  check `Number.isNaN(date.getTime())` rather than trusting the parse succeeded
 
-Not yet built: Apple Watch webhook (Phase 5), weekly adherence summary (Phase 6), read-only
-dashboard (Phase 7), proactive messaging/persona rework — escalating Saturday nag, daily
-workout push, habit nudges (Phase 8). See `docs/06-implementation-plan.md` for the full phase
-breakdown.
+Not yet built: weekly adherence summary (Phase 6), read-only dashboard (Phase 7), proactive
+messaging/persona rework — escalating Saturday nag, daily workout push, habit nudges
+(Phase 8). See `docs/06-implementation-plan.md` for the full phase breakdown.

@@ -92,3 +92,34 @@ existing split-generation pattern rather than introducing a new one:
   already defined in the schema.
 - `/logworkout` now looks up the previous log for the same exercise and
   notes weight/rep progress or regression in its reply.
+
+## Phase 5 — Apple Watch integration
+
+Prompted with "Now lets push phase 5." Claude read `docs/06-implementation-plan.md`
+(Phase 5 scope: webhook, `watch_metrics`, context injection),
+`docs/03-app-flow.md` flow 7, and the TRD's recommendation to add Fastify
+as a minimal HTTP layer rather than standing up a separate service:
+
+- New `watch_metrics` migration matching `05-backend-schema.md`.
+- `src/http/server.ts` (Fastify): `POST /webhook/health-auto-export`,
+  authenticated with a shared secret as a query param (the only auth
+  Health Auto Export's export-target config supports), plus an
+  unauthenticated `GET /health` liveness check. Runs alongside the
+  Telegram bot in the same process/deploy, per the TRD's "one backend
+  process" preference.
+- `src/watch/parseHealthAutoExport.ts` normalizes Health Auto Export's
+  metric names into the schema's `metric_type` values and parses its
+  workouts array; `storeWatchMetrics.ts` writes rows and resolves the
+  single onboarded user (no per-request identity in the webhook payload
+  itself — consistent with the schema's single-user MVP auth note).
+- `src/llm/buildContext.ts` now folds in last-24h step total, latest heart
+  rate, and latest logged workout, so open-ended coaching answers can
+  reference watch data per Phase 5's scope and the flow-7 spec ("no
+  user-facing message by default... available for the coach to
+  reference").
+- Caught and fixed during manual testing (curled a sample Health Auto
+  Export payload against a locally running server): the export's date
+  format (`"2026-08-06 08:00:00 -0700"`) isn't valid ISO 8601 as-is, so a
+  naive space-to-`T` swap silently produced `Invalid Date` and dropped
+  every row. Fixed with a regex-based reformat and now covered by the
+  "gotchas" note in CLAUDE.md.
