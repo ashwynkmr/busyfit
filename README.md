@@ -150,6 +150,50 @@ testing from a phone against localhost). `GET /health` is an unauthenticated liv
 
 Other scripts: `npm run build` (typecheck + compile), `npm run start` (run compiled output).
 
+## Deploying
+
+`npm run dev`/`npm run start` only run for as long as that terminal session stays open — for
+the bot, its Saturday-checkin cron, and the Apple Watch webhook to run continuously, it
+needs to live somewhere other than a laptop. This project deploys to
+[Northflank](https://northflank.com)'s free **Sandbox** plan: 2 always-on services + 2 cron
+jobs + 1 database, perpetually free (not a trial), with no sleep/cold-start. See
+`docs/02-trd.md` §1.1 for the full tradeoff table against Railway, Fly.io, Render, and
+Google Cloud Run.
+
+**Northflank vs. Google Cloud Run, for anyone who's already built bots on Cloud Run:** both
+are genuinely free at single-user scale, but they fit this app's architecture differently.
+Cloud Run scales to zero between requests, which suits a webhook-driven service — but this
+bot currently uses `grammy`'s long-polling `bot.start()` and an in-process `node-cron` job
+for the Saturday check-in, neither of which survives an instance being torn down between
+requests. Moving to Cloud Run would mean switching the bot to Telegram's webhook mode and
+moving the cron to Cloud Scheduler hitting an endpoint — a real (if not large) architecture
+change. Northflank's Sandbox plan keeps a process running persistently, same as local dev,
+so it was picked to avoid that rework; Cloud Run is arguably the more "correct" serverless
+choice if you're starting fresh or already deep in GCP tooling.
+
+**Runbook:**
+
+1. Create a Northflank account and connect this GitHub repo.
+2. Create a Northflank project; add a Postgres addon (the Sandbox plan's 1 free database) —
+   note the connection string it generates.
+3. Create a service from the repo for the bot process. Build command: `npm run build`. Start
+   command: `npm run start`. Expose the HTTP port (`PORT`, default `3000`) so Northflank
+   issues a public HTTPS domain — this also serves the Apple Watch webhook and `/health`.
+   (Confirm during setup whether Northflank's build step auto-detects this Node/TypeScript
+   project or needs an explicit build command/Dockerfile — none exists in this repo today.)
+4. Set env vars on the service: `TELEGRAM_BOT_TOKEN`, `ANTHROPIC_API_KEY`,
+   `HEALTH_WEBHOOK_SECRET`, `DATABASE_URL` (from the Postgres addon), `PORT`.
+5. Run migrations once against the new database — as a Northflank one-off Job running
+   `npm run migrate`, or locally with `DATABASE_URL` pointed at the addon's external
+   connection string.
+6. Update the Health Auto Export automation's webhook URL to
+   `https://<northflank-issued-domain>/webhook/health-auto-export?secret=<HEALTH_WEBHOOK_SECRET>`
+   — replacing whatever `localhost`/tunnel URL was used for local testing.
+7. Verify: `GET /health` returns `{"ok":true}`; `/start` in Telegram gets a reply; a manual
+   webhook curl (or the next real Health Auto Export sync) stores rows in `watch_metrics`;
+   Northflank's log viewer shows `Connected to Postgres` and the scheduled check-in count on
+   boot.
+
 ## Security & privacy
 
 - No secrets in this repo. `.env` is gitignored and was never committed; `.env.example` only

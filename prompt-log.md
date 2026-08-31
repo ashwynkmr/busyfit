@@ -123,3 +123,28 @@ as a minimal HTTP layer rather than standing up a separate service:
   naive space-to-`T` swap silently produced `Invalid Date` and dropped
   every row. Fixed with a regex-based reformat and now covered by the
   "gotchas" note in CLAUDE.md.
+
+## Hosting decision — moving off `npm run dev` on a laptop
+
+Prompted by noticing the bot only runs as long as a terminal session stays
+open, and asking whether the original TRD hosting plan (Railway or
+Fly.io, assumed free-tier) still held. It didn't: as of 2026, Railway's
+free plan is a $1/month credit (nowhere near enough for an always-on
+process + Postgres, which runs ~$5-10/month in usage), and Fly.io dropped
+free allowances for new accounts entirely. Render's free tier is
+genuinely $0 but sleeps after 15 min idle, which conflicts with the TRD's
+own reliability requirement for cron-fired Saturday check-ins.
+
+Research (current web search, since pricing/product info this recent
+isn't reliable from training data alone) surfaced Northflank's "Sandbox"
+plan as a free-forever, always-on match for the original value
+proposition — 2 always-on services, 2 cron jobs, 1 database, no
+sleep/cold-start, no recurring billing unless manually upgraded. Compared
+against Railway Hobby (~$5-10/month) and Google Cloud Run + Cloud
+Scheduler (also $0/month, but would require switching the bot from
+Telegram long-polling to webhook mode and moving the Saturday-checkin
+cron off in-process `node-cron`), Northflank was chosen specifically
+because it needs no architecture change from how the app already runs
+locally. `docs/02-trd.md` §1.1 and the README's new "Deploying" section
+now document this tradeoff, including the Cloud Run comparison, as a
+decision point for anyone reading the project as a portfolio piece.

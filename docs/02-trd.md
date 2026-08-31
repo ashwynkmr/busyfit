@@ -11,8 +11,38 @@
 | Bot interface | `grammy` or `node-telegram-bot-api` | Telegram Bot API wrapper, free, no approval process |
 | Database | PostgreSQL | Relational fits this data well — users, metrics, meals, workouts all reference each other |
 | LLM | Claude API (Sonnet for generation/coaching; cheaper model for intent routing) | Structured plan generation + open-ended coaching in one system |
-| Hosting | Railway or Fly.io | Free-tier usage credit covers a small always-on process + Postgres for single-user MVP |
+| Hosting | Northflank (Sandbox plan) | Free forever, always-on (no sleep/cold-start), includes cron jobs + a database — no architecture change from local dev. See §1.1 |
 | Watch data | Health Auto Export (iOS app) → webhook | No custom iOS app needed; Apple only allows HealthKit reads from an installed app, so this app bridges that gap |
+
+### 1.1 Hosting decision (revisited 2026)
+
+The original plan above named Railway or Fly.io on the assumption their free tiers would
+cover an always-on single-user process. That's no longer true — both providers' free
+allowances have shrunk or disappeared since. Revisited with current pricing/product
+research:
+
+| Option | Cost (single-user MVP) | Always-on? | Architecture change required |
+|---|---|---|---|
+| Railway (Hobby) | ~$5-10/month (Hobby plan fee + usage-metered CPU/RAM for the bot process and a Postgres addon) | Yes | None |
+| Fly.io (pay-as-you-go) | ~$5-7/month | Yes | None (but no free allowance for new accounts as of 2026) |
+| Render (free tier) | $0/month | No — sleeps after 15 min idle, ~10-30s cold start on wake | None to deploy, but breaks the reliability requirement in §7 (cron-fired Saturday check-ins can't fire while asleep) |
+| Google Cloud Run + Cloud Scheduler | $0/month at this scale (2M requests/month always-free) | No — scales to zero between requests, but request-driven rather than idle-timeout-based | Yes — the bot must run in Telegram *webhook* mode instead of `grammy`'s current long-polling `bot.start()`, and the Saturday check-in cron must move from in-process `node-cron` to Cloud Scheduler hitting an endpoint |
+| **Northflank (Sandbox plan) — chosen** | **$0/month** | **Yes — 2 always-on services never sleep** | **None** |
+
+**Why Northflank:** its free "Sandbox" plan (perpetual, not a trial) provides 2 always-on
+services, 2 cron jobs, and 1 database at no cost — matching the original Railway/Fly.io
+value proposition without the architecture changes Cloud Run would require. It asks for a
+card at signup as anti-abuse verification, but the Sandbox tier itself carries no recurring
+billing; a card is only charged if the account is manually upgraded to Pay-As-You-Go.
+Compute is capped small (roughly 0.1-1 vCPU, ~512MB per service on Sandbox), which is ample
+for a single-user bot process plus Postgres.
+
+**Cloud Run tradeoff, worth naming explicitly:** for someone already building on Cloud Run
+elsewhere, it's a reasonable alternative and arguably the more "correct" serverless
+architecture for a webhook-driven workload. It wasn't chosen here specifically because this
+app's design leans on an always-on process (in-process `node-cron`, `grammy` long-polling)
+that Northflank's Sandbox plan supports as-is — Cloud Run would mean rearchitecting both of
+those rather than just picking a new deploy target.
 
 ### 2. Why not WhatsApp (for now)
 
@@ -44,6 +74,8 @@ Extends the existing Saturday check-in cron pattern (per-user `node-cron` jobs k
 - **Daily workout push**: one job per user at their chosen send time (new `users.workout_push_time` preference, captured at onboarding)
 - **Healthy-habit nudges**: frequency-driven (`users.nudge_frequency`: off/low/medium/high) — rather than a fixed cron time, pick a new random time within a waking-hours window each day so it doesn't feel mechanical
 
+Northflank's Sandbox plan (§1.1) includes 2 free platform-level cron jobs as headroom, if any of the above ever needs to run outside the main process rather than as another in-process `node-cron` job.
+
 ### 5. Cost model
 
 Pay-as-you-go, billed per token, separate rates for input and output (output costs more).
@@ -51,7 +83,7 @@ Pay-as-you-go, billed per token, separate rates for input and output (output cos
 | Component | Estimated cost (single user) | Depends on |
 |---|---|---|
 | Claude API | ~$4-7/month | Number of daily interactions, size of weekly generated content (recipes/shopping lists are the largest single output), model choice, plus the new proactive messages (check-in escalation, daily workout push, habit nudges) — all small/cheap-tier calls, but they add up to several extra calls per day at "high" nudge frequency |
-| Hosting (Railway/Fly.io) | ~$0/month | Covered by free-tier usage credit at single-user scale |
+| Hosting (Northflank Sandbox) | $0/month | Free-forever plan, always-on, no usage metering to exceed at single-user scale (see §1.1) |
 | Health Auto Export | Small one-time or subscription fee | Fixed cost, doesn't scale with usage — check current in-app pricing |
 | Telegram | Free | N/A |
 
@@ -60,7 +92,7 @@ Pay-as-you-go, billed per token, separate rates for input and output (output cos
 - Larger generated outputs (longer recipe lists, more detailed plans)
 - Using a more expensive model for routine tasks that a cheaper one could handle
 
-**Total estimate for MVP (single user): low single digits to ~$10/month**, dominated by whichever hosting tier is in use once free credits are exhausted — Claude API cost is comparatively minor at this scale.
+**Total estimate for MVP (single user): ~$4-7/month**, almost entirely Claude API cost now that hosting is free (Northflank Sandbox, §1.1) — Health Auto Export's fee is the only other line item.
 
 ### 6. External APIs / integrations
 
@@ -82,7 +114,7 @@ Pay-as-you-go, billed per token, separate rates for input and output (output cos
 | Frontend | Next.js (App Router) | Simplest way to get a small set of chart/table pages with server-side data fetching; no client-side auth or complex state needed since it's read-only |
 | Charts | A lightweight charting lib (e.g. Recharts) | Just weight/body-fat trend lines and simple bar/heatmap views — no need for anything heavier |
 | API layer | A few read-only JSON endpoints added to the existing backend process (e.g. via a minimal HTTP server such as Fastify, since the current backend is bot-only with no HTTP server yet) | Keeps one backend process/deploy rather than standing up a separate service |
-| Hosting | Same Railway/Fly.io project as the bot backend | No new infra — deploy the dashboard as a second service (or route) alongside the existing bot process, still within single-user free-tier usage |
+| Hosting | Same Northflank project as the bot backend | No new infra — deploy the dashboard as the project's second free Sandbox service alongside the existing bot process (§1.1), still within free-tier usage |
 | Data layer | None new — reads directly from the existing Postgres tables (`metrics`, `targets`, `meal_plans`, `meals`, `workout_splits`, `workout_logs`) | All data the dashboard needs (trends, adherence, goal progress) already exists from Phases 1-4; this is aggregation/read queries only, no new tables |
 
 **Note on exposure:** since this serves personal health data over the public internet with no login system (per PRD scope — single-user, no new auth), consider a minimal protection layer at deploy time (e.g. a shared-secret query param/header, or hosting-provider-level access restriction) rather than leaving the dashboard fully open. This is a deployment-time consideration, not a new auth system in the app itself.
